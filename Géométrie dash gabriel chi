@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Geometry Dash FIXED</title>
+<style>
+body { margin:0; overflow:hidden; background:black; touch-action:none; }
+canvas { display:block; margin:auto; background:#000; }
+#ui {
+ position:absolute; top:10px; left:50%; transform:translateX(-50%);
+ color:#0ff; font-family:Arial; font-size:18px; text-align:center;
+}
+#start {
+ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+ color:white; font-family:Arial; text-align:center;
+}
+button { padding:10px 20px; font-size:18px; }
+</style>
+</head>
+<body>
+<div id="ui">Score: 0<br>Mode: Cube<br>Best: 0</div>
+<div id="start">
+<h1>Geometry Dash FIXED</h1>
+<button onclick="startGame()">Jouer</button>
+</div>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const ui = document.getElementById("ui");
+const startScreen = document.getElementById("start");
+
+function resize(){
+ const dpr = window.devicePixelRatio || 1;
+ canvas.width = innerWidth * dpr;
+ canvas.height = innerHeight * dpr;
+ canvas.style.width = innerWidth + "px";
+ canvas.style.height = innerHeight + "px";
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize();
+window.addEventListener("resize", resize);
+
+let started=false;
+let bestScore = Number(localStorage.getItem("best") || 0);
+
+let player = {};
+let obstacles = [];
+let particles = [];
+let trail = [];
+let frame = 0;
+let score = 0;
+const speed = 6;
+let gameOver=false;
+let restarting=false;
+let lastSpawnX = 0;
+
+function initGame(){
+ player = {
+  x:100,
+  y:innerHeight-140,
+  size:45,
+  dy:0,
+  gravity:0.8,
+  jump:-22,
+  grounded:true,
+  rotation:0
+ };
+
+ obstacles = [];
+ particles = [];
+ trail = [];
+ frame = 0;
+ score = 0;
+ gameOver = false;
+ restarting = false;
+ lastSpawnX = innerWidth + 800;
+}
+
+initGame();
+
+function startGame(){
+ started=true;
+ startScreen.style.display="none";
+ initGame();
+}
+
+function spawnObstacle(){
+ const gap = Math.random()*300 + 600;
+ const h = Math.random()*150+50;
+ const spawnX = Math.max(innerWidth, lastSpawnX) + gap;
+ obstacles.push({x:spawnX, y:innerHeight-70-h, w:45, h:h});
+ lastSpawnX = spawnX;
+}
+
+function createParticles(x,y,color="#0ff"){
+ for(let i=0;i<20;i++){
+  particles.push({
+   x,y,
+   dx:(Math.random()-0.5)*8,
+   dy:(Math.random()-0.5)*8,
+   life:40,
+   color
+  });
+ }
+}
+
+// 🔥 FIX TABLET / MOBILE JUMP
+function jump(){
+ if(player.grounded && !gameOver){
+  player.dy = player.jump;
+  player.grounded = false;
+  createParticles(player.x,player.y);
+ }
+}
+
+function resetGame(){
+ if(restarting) return;
+ restarting = true;
+
+ if(score > bestScore){
+  bestScore = score;
+  localStorage.setItem("best", bestScore);
+ }
+
+ setTimeout(()=>{
+  initGame();
+ },150);
+}
+
+function update(){
+ if(!started || gameOver) return;
+
+ frame++;
+ score++;
+ ui.innerHTML = `Score: ${score}<br>Mode: Cube<br>Best: ${bestScore}`;
+
+ if(frame > 180 && frame % 90 === 0) spawnObstacle();
+
+ trail.push({x:player.x, y:player.y});
+ if(trail.length>20) trail.shift();
+
+ player.dy += player.gravity;
+ player.y += player.dy;
+
+ const groundY = innerHeight-140;
+ if(player.y >= groundY){
+  player.y = groundY;
+  player.dy = 0;
+  player.grounded = true;
+  player.rotation = 0;
+ } else {
+  player.rotation += 15;
+ }
+
+ for(let i=obstacles.length-1;i>=0;i--){
+  const obs = obstacles[i];
+  obs.x -= speed;
+
+  if(
+   player.x < obs.x + obs.w &&
+   player.x + player.size > obs.x &&
+   player.y < obs.y + obs.h &&
+   player.y + player.size > obs.y
+  ){
+   gameOver = true;
+   createParticles(player.x,player.y,"#ff0000");
+   resetGame();
+  }
+
+  if(obs.x + obs.w < 0){
+   obstacles.splice(i,1);
+  }
+ }
+
+ for(let i=particles.length-1;i>=0;i--){
+  const p = particles[i];
+  p.x += p.dx;
+  p.y += p.dy;
+  p.life--;
+  if(p.life <= 0) particles.splice(i,1);
+ }
+}
+
+function draw(){
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ ctx.fillStyle="#050505";
+ ctx.fillRect(0,0,innerWidth,innerHeight);
+
+ ctx.fillStyle="#222";
+ ctx.fillRect(0,innerHeight-70,innerWidth,70);
+
+ trail.forEach((t,i)=>{
+  ctx.fillStyle=`rgba(0,255,255,${i/20})`;
+  ctx.fillRect(t.x,t.y,player.size,player.size);
+ });
+
+ ctx.save();
+ ctx.translate(player.x+player.size/2, player.y+player.size/2);
+ ctx.rotate(player.rotation*Math.PI/180);
+
+ ctx.fillStyle = "#00ff88";
+ ctx.shadowColor = "#00ff88";
+ ctx.shadowBlur = 25;
+ ctx.fillRect(-player.size/2,-player.size/2,player.size,player.size);
+ ctx.restore();
+
+ ctx.fillStyle="#ff0033";
+ obstacles.forEach(o=>ctx.fillRect(o.x,o.y,o.w,o.h));
+
+ particles.forEach(p=>{
+  ctx.fillStyle=p.color;
+  ctx.fillRect(p.x,p.y,3,3);
+ });
+}
+
+function loop(){
+ update();
+ draw();
+ requestAnimationFrame(loop);
+}
+
+// clavier
+window.addEventListener("keydown",e=>{
+ if(e.code==="Space") jump();
+});
+
+// 🔥 FIX MOBILE (meilleur que touchstart seul)
+canvas.addEventListener("pointerdown", (e)=>{
+ e.preventDefault();
+ jump();
+});
+
+loop();
+</script>
+</body>
+</html>
+
